@@ -18,6 +18,7 @@
 package org.magnum.dataup;
 
 import java.util.Collection;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.*;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
@@ -26,6 +27,8 @@ import org.magnum.dataup.model.VideoStatus;
 import org.magnum.dataup.model.VideoStatus.VideoState;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 import org.springframework.web.multipart.MultipartFile;
 
 import retrofit.client.Response;
@@ -62,22 +65,29 @@ public class VideoHandlingController {
 	public static final String VIDEO_SVC_PATH = "/video";	
 	public static final String VIDEO_DATA_PATH = VIDEO_SVC_PATH + "/{id}/data";
 	
-	public List<Video> videos = new ArrayList();
+    private static final AtomicLong currentId = new AtomicLong(0L);
+	
+    private Map<Long,Video> videos = new HashMap<Long, Video>();
 
 	@RequestMapping(value = VIDEO_SVC_PATH, method = RequestMethod.GET)
 	public @ResponseBody Collection<Video> getVideoList(){
-		return videos;
+		return videos.values();
 	}
 	
 	@RequestMapping(value = VIDEO_SVC_PATH, method = RequestMethod.POST)
 	public @ResponseBody Video addVideo(@RequestBody Video v){
-		
-		
+		if(v.getId() == 0){
+			v.setId(currentId.incrementAndGet());
+		}
+		if(v.getDataUrl() == null){
+			v.setDataUrl(getDataUrl(v.getId()));
+		}
+		videos.put(v.getId(), v);
 		return v;
 	}
 	
 	@RequestMapping(value = VIDEO_DATA_PATH, method = RequestMethod.POST)
-	public @ResponseBody VideoStatus setVideoData(@PathVariable(ID_PARAMETER) long id, @RequestParam(value = "DATA") MultipartFile videoData, HttpServletResponse response){
+	public @ResponseBody VideoStatus setVideoData(@PathVariable(ID_PARAMETER) long id, @RequestParam(value = "data") MultipartFile videoData, HttpServletResponse response){
 		
 		
 		return new VideoStatus(VideoState.READY);
@@ -87,5 +97,31 @@ public class VideoHandlingController {
     public void getData(@PathVariable(ID_PARAMETER) long id, HttpServletResponse response){
 		
 		
+	}
+	
+    private String getDataUrl(long videoId){
+        String url = getUrlBaseForLocalServer() + "/video/" + videoId + "/data";
+        return url;
+    }
+
+ 	private String getUrlBaseForLocalServer() {
+	   HttpServletRequest request = 
+	       ((ServletRequestAttributes) RequestContextHolder.getRequestAttributes()).getRequest();
+	   String base = 
+	      "http://"+request.getServerName() 
+	      + ((request.getServerPort() != 80) ? ":"+request.getServerPort() : "");
+	   return base;
+	}
+ 	
+  	public Video save(Video entity) {
+		checkAndSetId(entity);
+		videos.put(entity.getId(), entity);
+		return entity;
+	}
+
+	private void checkAndSetId(Video entity) {
+		if(entity.getId() == 0){
+			entity.setId(currentId.incrementAndGet());
+		}
 	}
 }
