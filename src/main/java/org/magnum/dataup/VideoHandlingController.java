@@ -19,6 +19,8 @@ package org.magnum.dataup;
 
 import java.util.Collection;
 import java.util.concurrent.atomic.AtomicLong;
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.*;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
@@ -76,27 +78,45 @@ public class VideoHandlingController {
 	
 	@RequestMapping(value = VIDEO_SVC_PATH, method = RequestMethod.POST)
 	public @ResponseBody Video addVideo(@RequestBody Video v){
-		if(v.getId() == 0){
-			v.setId(currentId.incrementAndGet());
-		}
-		if(v.getDataUrl() == null){
-			v.setDataUrl(getDataUrl(v.getId()));
-		}
-		videos.put(v.getId(), v);
+		updateIdUrlAndSave(v);
 		return v;
 	}
 	
 	@RequestMapping(value = VIDEO_DATA_PATH, method = RequestMethod.POST)
 	public @ResponseBody VideoStatus setVideoData(@PathVariable(ID_PARAMETER) long id, @RequestParam(value = "data") MultipartFile videoData, HttpServletResponse response){
-		
-		
-		return new VideoStatus(VideoState.READY);
+		VideoStatus vds = new VideoStatus(null);
+		if(videoData.isEmpty() || id <= 0){
+			response.setStatus(HttpServletResponse.SC_NOT_FOUND);
+		}
+		else{
+			try{
+				VideoFileManager.get().saveVideoData(videos.get(id), videoData.getInputStream());
+				vds.setState(VideoState.READY);
+				response.setStatus(HttpServletResponse.SC_OK);
+			}
+			catch(Exception ex){
+				response.setStatus(HttpServletResponse.SC_NOT_FOUND);
+				ex.printStackTrace();
+			}
+		}				
+		return vds;
 	}
 		
 	@RequestMapping(value = VIDEO_DATA_PATH, method = RequestMethod.GET)
-    public void getData(@PathVariable(ID_PARAMETER) long id, HttpServletResponse response){
-		
-		
+    public void getData(@PathVariable(ID_PARAMETER) long id, HttpServletResponse response) throws Exception{
+		if(id <= 0){
+			response.setStatus(HttpServletResponse.SC_NOT_FOUND);
+		}
+		else{
+			Video v = videos.get(id);
+			try {
+				VideoFileManager.get().copyVideoData(v, response.getOutputStream());
+				response.setStatus(HttpServletResponse.SC_OK);
+			} catch (Exception e) {
+				response.setStatus(HttpServletResponse.SC_NOT_FOUND);
+				e.printStackTrace();
+			}
+		}
 	}
 	
     private String getDataUrl(long videoId){
@@ -113,8 +133,9 @@ public class VideoHandlingController {
 	   return base;
 	}
  	
-  	public Video save(Video entity) {
+  	public Video updateIdUrlAndSave(Video entity) {
 		checkAndSetId(entity);
+		checkAndSetUrl(entity);
 		videos.put(entity.getId(), entity);
 		return entity;
 	}
@@ -122,6 +143,12 @@ public class VideoHandlingController {
 	private void checkAndSetId(Video entity) {
 		if(entity.getId() == 0){
 			entity.setId(currentId.incrementAndGet());
+		}
+	}
+	
+	private void checkAndSetUrl(Video entity){
+		if(entity.getDataUrl() == null){
+			entity.setDataUrl(getDataUrl(entity.getId()));
 		}
 	}
 }
